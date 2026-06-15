@@ -10,6 +10,13 @@ import { CoordinationVariables } from './types/common.js';
 const app = new Hono<{ Variables: CoordinationVariables }>();
 const PORT = 3041;
 
+import { cors } from 'hono/cors';
+
+app.use('*', cors({
+    origin: '*',
+    allowMethods: ['GET', 'POST', 'PATCH', 'DELETE'],
+}));
+
 // Public
 app.route('/health', health);
 
