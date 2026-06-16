@@ -39,6 +39,16 @@ app.post('/api/v1/licences/validate', requireDeploymentKey, async (c) => {
     return c.json({ valid: res.data });
 });
 
+// Public deployment lookup - no auth
+app.get('/api/v1/deployments/lookup/:siteCode', async (c) => {
+    const siteCode = c.req.param('siteCode');
+    const { getDeploymentBySiteCode } = await import('./services/deploymentService.js');
+    const res = getDeploymentBySiteCode(siteCode);
+    if(!res.ok) return c.json({ error: 'Deployment not found' }, 404);
+    const { id, clientName, siteName, tunnelIp } = res.data;
+    return c.json({ id, clientName, siteName, tunnelIp });
+});
+
 // Admin routes - admin key auth
 app.use('/api/v1/*', requireAdminKey);
 app.route('/api/v1/deployments', deployments);
