@@ -5,6 +5,7 @@ export type Deployment = {
     id: string,
     clientName: string,
     siteName: string,
+    siteCode: string,
     deploymentKey: string,
     tunnelIp: string,
     publicKey: string,
@@ -19,11 +20,12 @@ export type CreateDeploymentParams = {
     siteName: string,
     tunnelIp: string,
     publicKey: string,
+    siteCode: string,
 }
 
 const _createDeployment = db.prepare(`
-    INSERT INTO deployments (id, clientName, siteName, deploymentKey, tunnelIp, publicKey, status, createdAt)
-    VALUES (@id, @clientName, @siteName, @deploymentKey, @tunnelIp, @publicKey, 'pending', @createdAt)
+    INSERT INTO deployments (id, clientName, siteName, siteCode, deploymentKey, tunnelIp, publicKey, status, createdAt)
+    VALUES (@id, @clientName, @siteName, @siteCode, @deploymentKey, @tunnelIp, @publicKey, 'pending', @createdAt)
 `);
 
 const _getDeployments = db.prepare(`SELECT * FROM deployments`);
@@ -31,6 +33,7 @@ const _getDeploymentById = db.prepare(`SELECT * FROM deployments WHERE id = ?`);
 const _getDeploymentByKey = db.prepare(`SELECT * FROM deployments WHERE deploymentKey = ?`);
 const _updateHeartbeat = db.prepare(`UPDATE deployments SET lastHeartbeat = ? WHERE id = ?`);
 const _updateStatus = db.prepare(`UPDATE deployments SET status = ? WHERE id = ?`);
+const _getDeploymentBySiteCode = db.prepare(`SELECT * FROM deployments WHERE siteCode = ?`);
 
 export const createDeployment = (params: CreateDeploymentParams) => {
     try {
@@ -42,6 +45,7 @@ export const createDeployment = (params: CreateDeploymentParams) => {
             id,
             clientName: params.clientName,
             siteName: params.siteName,
+            siteCode: params.siteCode,
             deploymentKey,
             tunnelIp: params.tunnelIp,
             publicKey: params.publicKey,
@@ -98,5 +102,15 @@ export const setDeploymentStatus = (id: string, status: string) => {
         return ok(undefined);
     } catch(e) {
         return err('Failed to update status');
+    }
+}
+
+export const getDeploymentBySiteCode = (siteCode: string) => {
+    try {
+        const row = _getDeploymentBySiteCode.get(siteCode) as Deployment | undefined;
+        if(!row) return err('Deployment not found');
+        return ok(row);
+    } catch(e) {
+        return err('Failed to get deployment');
     }
 }

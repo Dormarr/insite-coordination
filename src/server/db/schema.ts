@@ -5,6 +5,7 @@ const deploymentsTable = `
         id TEXT PRIMARY KEY NOT NULL,
         clientName TEXT NOT NULL,
         siteName TEXT NOT NULL,
+        siteCode TEXT NOT NULL,
         deploymentKey TEXT NOT NULL UNIQUE,
         tunnelIp TEXT NOT NULL UNIQUE,
         publicKey TEXT NOT NULL UNIQUE,
@@ -42,6 +43,7 @@ export const createDatabaseTables = () => {
 
     // Deployments
     db.exec('CREATE INDEX IF NOT EXISTS idx_deployments_deploymentKey ON deployments(deploymentKey)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_deployments_siteCode ON deployments(siteCode)');
     db.exec('CREATE INDEX IF NOT EXISTS idx_deployments_status ON deployments(status)');
     db.exec('CREATE INDEX IF NOT EXISTS idx_deployments_licenceId ON deployments(licenceId)');
 

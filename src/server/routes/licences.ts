@@ -22,8 +22,8 @@ deployments.get('/:id', (c) => {
 deployments.post('/', async (c) => {
     const body = await c.req.json();
 
-    if(!body.clientName || !body.siteName || !body.tunnelIp || !body.publicKey){
-        return c.json({ error: 'clientName, siteName, tunnelIp and publicKey are required' }, 400);
+    if(!body.clientName || !body.siteName || !body.tunnelIp || !body.publicKey || !body.siteCode){
+        return c.json({ error: 'clientName, siteName, tunnelIp, publicKey and siteCode are required' }, 400);
     }
 
     const res = createDeployment({
@@ -31,6 +31,7 @@ deployments.post('/', async (c) => {
         siteName: body.siteName,
         tunnelIp: body.tunnelIp,
         publicKey: body.publicKey,
+        siteCode: body.siteCode,
     });
 
     if(!res.ok) return c.json({ error: res.error }, 500);
