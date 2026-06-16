@@ -1,5 +1,5 @@
 import db from '../db/database.js';
-import { ok, err } from '../types/common.js';
+import { ok, err, ServiceResult } from '../types/common.js';
 
 export type Deployment = {
     id: string,
@@ -105,7 +105,7 @@ export const setDeploymentStatus = (id: string, status: string) => {
     }
 }
 
-export const getDeploymentBySiteCode = (siteCode: string) => {
+export const getDeploymentBySiteCode = (siteCode: string): ServiceResult<Deployment> => {
     try {
         const row = _getDeploymentBySiteCode.get(siteCode) as Deployment | undefined;
         if(!row) return err('Deployment not found');

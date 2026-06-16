@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { createDeployment, getDeployments, getDeploymentById, touchHeartbeat, setDeploymentStatus } from '../services/deploymentService.js';
+import { createDeployment, getDeployments, getDeploymentById, touchHeartbeat, setDeploymentStatus, getDeploymentBySiteCode } from '../services/deploymentService.js';
 
 const deployments = new Hono();
 
@@ -54,6 +54,17 @@ deployments.patch('/:id/status', async (c) => {
     const res = setDeploymentStatus(id, body.status);
     if(!res.ok) return c.json({ error: res.error }, 500);
     return new Response(null, { status: 204 });
+});
+
+// Public - lookup by site code (no auth required)
+deployments.get('/lookup/:siteCode', (c) => {
+    const siteCode = c.req.param('siteCode');
+    const res = getDeploymentBySiteCode(siteCode);
+    if(!res.ok) return c.json({ error: 'Deployment not found' }, 404);
+    
+    // Only return what the client needs - not the deploymentKey
+    const { id, clientName, siteName, tunnelIp } = res.data;
+    return c.json({ id, clientName, siteName, tunnelIp });
 });
 
 export default deployments;
