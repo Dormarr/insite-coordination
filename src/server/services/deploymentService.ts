@@ -23,6 +23,11 @@ export type CreateDeploymentParams = {
     siteCode: string,
 }
 
+export type DeploymentId = {
+    id: string,
+    deploymentKey: string,
+}
+
 const _createDeployment = db.prepare(`
     INSERT INTO deployments (id, clientName, siteName, siteCode, deploymentKey, tunnelIp, publicKey, status, createdAt)
     VALUES (@id, @clientName, @siteName, @siteCode, @deploymentKey, @tunnelIp, @publicKey, 'pending', @createdAt)
@@ -34,8 +39,19 @@ const _getDeploymentByKey = db.prepare(`SELECT * FROM deployments WHERE deployme
 const _updateHeartbeat = db.prepare(`UPDATE deployments SET lastHeartbeat = ? WHERE id = ?`);
 const _updateStatus = db.prepare(`UPDATE deployments SET status = ? WHERE id = ?`);
 const _getDeploymentBySiteCode = db.prepare(`SELECT * FROM deployments WHERE siteCode = ?`);
+const _updateDeploymentPeer = db.prepare(`UPDATE deployments SET publicKey = ?, tunnelIp = ?, status = 'active' WHERE id = ?`);
 
-export const createDeployment = (params: CreateDeploymentParams) => {
+
+export const updateDeploymentPeer = (id: string, publicKey: string, tunnelIp: string) => {
+    try {
+        _updateDeploymentPeer.run(publicKey, tunnelIp, id);
+        return ok(undefined);
+    } catch(e) {
+        return err('Failed to update deployment peer');
+    }
+}
+
+export const createDeployment = (params: CreateDeploymentParams): ServiceResult<DeploymentId> => {
     try {
         const id = crypto.randomUUID();
         const deploymentKey = crypto.randomUUID();
@@ -58,7 +74,7 @@ export const createDeployment = (params: CreateDeploymentParams) => {
     }
 }
 
-export const getDeployments = () => {
+export const getDeployments = (): ServiceResult<Deployment[]> => {
     try {
         const rows = _getDeployments.all() as Deployment[];
         return ok(rows);
@@ -67,7 +83,7 @@ export const getDeployments = () => {
     }
 }
 
-export const getDeploymentById = (id: string) => {
+export const getDeploymentById = (id: string): ServiceResult<Deployment> => {
     try {
         const row = _getDeploymentById.get(id) as Deployment | undefined;
         if(!row) return err('Deployment not found');
@@ -77,7 +93,7 @@ export const getDeploymentById = (id: string) => {
     }
 }
 
-export const getDeploymentByKey = (key: string) => {
+export const getDeploymentByKey = (key: string): ServiceResult<Deployment> => {
     try {
         const row = _getDeploymentByKey.get(key) as Deployment | undefined;
         if(!row) return err('Deployment not found');
@@ -87,7 +103,7 @@ export const getDeploymentByKey = (key: string) => {
     }
 }
 
-export const touchHeartbeat = (id: string) => {
+export const touchHeartbeat = (id: string): ServiceResult<void> => {
     try {
         _updateHeartbeat.run(new Date().toISOString(), id);
         return ok(undefined);
@@ -96,7 +112,7 @@ export const touchHeartbeat = (id: string) => {
     }
 }
 
-export const setDeploymentStatus = (id: string, status: string) => {
+export const setDeploymentStatus = (id: string, status: string): ServiceResult<void> => {
     try {
         _updateStatus.run(status, id);
         return ok(undefined);
