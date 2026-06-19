@@ -130,3 +130,21 @@ export const getDeploymentBySiteCode = (siteCode: string): ServiceResult<Deploym
         return err('Failed to get deployment');
     }
 }
+
+const _getStaleDeployments = db.prepare(`
+    SELECT * FROM deployments 
+    WHERE status = 'active' 
+    AND (
+        (lastHeartbeat IS NOT NULL AND lastHeartbeat < @cutoff)
+        OR (lastHeartbeat IS NULL AND createdAt < @cutoff)
+    )
+`);
+
+export const getStaleDeployments = (cutoffIso: string): ServiceResult<Deployment[]> => {
+    try {
+        const rows = _getStaleDeployments.all({ cutoff: cutoffIso }) as Deployment[];
+        return ok(rows);
+    } catch(e) {
+        return err('Failed to get stale deployments');
+    }
+}

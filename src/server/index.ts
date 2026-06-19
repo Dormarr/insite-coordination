@@ -11,6 +11,7 @@ const app = new Hono<{ Variables: CoordinationVariables }>();
 const PORT = 3041;
 
 import { cors } from 'hono/cors';
+import { startSweepSchedule } from './jobs/peerSweep.js';
 
 app.use('*', cors({
     origin: '*',
@@ -58,7 +59,7 @@ app.post('/api/v1/deployments/register', async (c) => {
         return c.json({ error: 'siteCode and publicKey required' }, 400);
     }
 
-    const { getDeploymentBySiteCode, getDeployments, updateDeploymentPeer } = 
+    const { getDeploymentBySiteCode, updateDeploymentPeer } = 
         await import('./services/deploymentService.js');
 
     const res = getDeploymentBySiteCode(siteCode);
@@ -66,23 +67,39 @@ app.post('/api/v1/deployments/register', async (c) => {
 
     const deployment = res.data;
 
-    const allDeployments = getDeployments();
-    if(!allDeployments.ok) return c.json({ error: 'Failed' }, 500);
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execAsync = promisify(exec);
+    const wgInterface = process.env.WG_INTERFACE ?? 'wg0';
 
-    const usedIps = allDeployments.data
-        .map((d: any) => d.tunnelIp)
-        .filter((ip: string) => ip?.startsWith('10.0.0.'))
-        .map((ip: string) => parseInt(ip.split('.')[3]));
+    // Live wg0 state is the only trustworthy source - the DB can drift from it
+    const { stdout } = await execAsync(`wg show ${wgInterface} dump`);
+    const livePeers = stdout.trim().split('\n').slice(1).filter(Boolean).map(line => {
+        const [pubKey, , , allowedIps] = line.split('\t');
+        return { pubKey, allowedIps };
+    });
+
+    // If this site already had a peer (e.g. re-registering after a reset with a
+    // fresh keypair), remove the old one so it doesn't linger as a dead peer
+    // and doesn't keep its old IP marked as "used" once it's gone
+    if(deployment.publicKey && deployment.publicKey !== publicKey) {
+        const stillPresent = livePeers.some(p => p.pubKey === deployment.publicKey);
+        if(stillPresent) {
+            await execAsync(`wg set ${wgInterface} peer ${deployment.publicKey} remove`);
+        }
+    }
+
+    const usedIps = livePeers
+        .filter(p => p.pubKey !== deployment.publicKey)
+        .map(p => p.allowedIps)
+        .filter(ip => ip?.startsWith('10.0.0.'))
+        .map(ip => parseInt(ip.split('.')[3].split('/')[0]));
 
     let nextIp = 2;
     while(usedIps.includes(nextIp)) nextIp++;
     const assignedIp = `10.0.0.${nextIp}`;
 
     try {
-        const { exec } = await import('child_process');
-        const { promisify } = await import('util');
-        const execAsync = promisify(exec);
-        const wgInterface = process.env.WG_INTERFACE ?? 'wg0';
         await execAsync(`wg set ${wgInterface} peer ${publicKey} allowed-ips ${assignedIp}/32`);
         await execAsync(`wg-quick save ${wgInterface}`);
     } catch(e) {
@@ -107,5 +124,7 @@ app.route('/api/v1/licences', licences);
 serve({ fetch: app.fetch, port: PORT }, () => {
     console.log(`InSite Coordination running on http://localhost:${PORT}`);
 });
+
+startSweepSchedule();
 
 export default app;
