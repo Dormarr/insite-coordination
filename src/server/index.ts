@@ -118,8 +118,22 @@ app.post('/api/v1/deployments/register', async (c) => {
 });
 
 app.post('/api/v1/certificates/issue', requireDeploymentKey, async (c) => {
-    const certHandler = certificates.fetch;
-    return certHandler(c.req.raw, c.env);
+    const { issueCertificate } = await import('./services/certificateService.js');
+    const deployment = c.get('deployment');
+    const body = await c.req.json();
+    const { csr } = body;
+
+    if (!csr) return c.json({ error: 'csr is required' }, 400);
+
+    const hostname = `${deployment.siteCode}.insite-platform.co.uk`;
+
+    try {
+        const certificate = await issueCertificate(hostname, csr);
+        return c.json({ certificate });
+    } catch (e) {
+        console.error('[Certificates] Issuance failed:', e);
+        return c.json({ error: 'Certificate issuance failed' }, 500);
+    }
 });
 
 // Admin routes - admin key auth
