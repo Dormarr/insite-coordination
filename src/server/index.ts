@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import './db/schema.js';
 import deployments from './routes/deployments.js';
+import certificates from './routes/certificates.js';
 import licences from './routes/licences.js';
 import health from './routes/health.js';
 import { requireAdminKey, requireDeploymentKey } from './middleware/auth.js';
@@ -114,6 +115,11 @@ app.post('/api/v1/deployments/register', async (c) => {
         serverPublicKey: process.env.WG_SERVER_PUBLIC_KEY,
         serverEndpoint: process.env.WG_SERVER_ENDPOINT,
     });
+});
+
+app.post('/api/v1/certificates/issue', requireDeploymentKey, async (c) => {
+    const certHandler = certificates.fetch;
+    return certHandler(c.req.raw, c.env);
 });
 
 // Admin routes - admin key auth
