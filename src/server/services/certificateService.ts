@@ -20,8 +20,8 @@ export const issueCertificate = async (hostname: string, csrPem: string): Promis
 
     const accountKey = await getOrCreateAccountKey();
 
-    // const directoryUrl = acme.directory.letsencrypt.staging;
-    const directoryUrl = acme.directory.letsencrypt.production;
+    const directoryUrl = acme.directory.letsencrypt.staging;
+    // const directoryUrl = acme.directory.letsencrypt.production;
     console.log('[Certificates] Using directory:', directoryUrl);
 
     const client = new acme.Client({
