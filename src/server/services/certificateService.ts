@@ -21,7 +21,8 @@ export const issueCertificate = async (hostname: string, csrPem: string): Promis
     const accountKey = await getOrCreateAccountKey();
 
     const client = new acme.Client({
-        directoryUrl: acme.directory.letsencrypt.production,
+        // directoryUrl: acme.directory.letsencrypt.production,
+        directoryUrl: acme.directory.letsencrypt.staging,
         accountKey,
     });
 
