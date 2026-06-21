@@ -25,6 +25,8 @@ export const issueCertificate = async (hostname: string, csrPem: string): Promis
         accountKey,
     });
 
+    acme.setLogger((message) => console.log('[acme-client]', message));
+
     const recordIds: string[] = [];
 
     console.log('[Certificates] Creating certificate...');
