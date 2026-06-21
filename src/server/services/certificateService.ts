@@ -16,6 +16,8 @@ const getOrCreateAccountKey = async (): Promise<string> => {
 };
 
 export const issueCertificate = async (hostname: string, csrPem: string): Promise<string> => {
+    console.log('[Certificates] Issuing certificate...')
+
     const accountKey = await getOrCreateAccountKey();
 
     const client = new acme.Client({
@@ -25,6 +27,7 @@ export const issueCertificate = async (hostname: string, csrPem: string): Promis
 
     const recordIds: string[] = [];
 
+    console.log('[Certificates] Creating certificate...');
     const cert = await client.auto({
         csr: csrPem,
         email: 'admin@insite-platform.co.uk', // worth using a real, monitored mailbox - Let's Encrypt emails here on expiry problems
@@ -39,6 +42,8 @@ export const issueCertificate = async (hostname: string, csrPem: string): Promis
             for (const id of recordIds) await deleteTxtRecord(id);
         },
     });
+
+    console.log('[Certificates] Certificate has been made, returning as string');
 
     return cert.toString();
 };

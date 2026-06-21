@@ -131,6 +131,7 @@ app.post('/api/v1/certificates/issue', requireDeploymentKey, async (c) => {
 
     try {
         const certificate = await issueCertificate(hostname, csr);
+        console.log('[Certificates] Certificate has reached the endpoint. Returning to client');
         return c.json({ certificate });
     } catch (e) {
         console.error('[Certificates] Issuance failed:', e);
