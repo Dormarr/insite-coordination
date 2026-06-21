@@ -10,6 +10,7 @@ certificates.post('/issue', async (c) => {
     const { csr } = body;
 
     if (!csr) return c.json({ error: 'csr is required' }, 400);
+    if(!deployment) console.log('[Certificates] Deployment key is missing');
 
     const hostname = `${deployment.siteCode}.insite-platform.co.uk`;
 

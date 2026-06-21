@@ -118,6 +118,7 @@ app.post('/api/v1/deployments/register', async (c) => {
 });
 
 app.post('/api/v1/certificates/issue', requireDeploymentKey, async (c) => {
+    console.log('[Certificates] Request received for issuance');
     const { issueCertificate } = await import('./services/certificateService.js');
     const deployment = c.get('deployment');
     const body = await c.req.json();
