@@ -70,7 +70,7 @@ export const createDeployment = (params: CreateDeploymentParams): ServiceResult<
 
         return ok({ id, deploymentKey });
     } catch(e) {
-        return err('Failed to create deployment');
+        return err('Failed to create deployment:' + e);
     }
 }
 

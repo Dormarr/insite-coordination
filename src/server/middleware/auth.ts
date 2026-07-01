@@ -1,6 +1,7 @@
 import type { Next } from 'hono';
 import type { AppContext } from '../types/common.js';
 import { Deployment } from '../services/deploymentService.js';
+import { getDeploymentByKey } from '../services/deploymentService.js';
 
 const ADMIN_KEY = process.env.COORDINATION_ADMIN_KEY ?? 'dev-admin-key';
 
@@ -22,7 +23,6 @@ export const requireDeploymentKey = async (c: AppContext, next: Next) => {
         return c.json({ error: 'Unauthorised' }, 401);
     }
     const key = auth.replace('Bearer ', '');
-    const { getDeploymentByKey } = await import('../services/deploymentService.js');
     const res = getDeploymentByKey(key);
     if(!res.ok) {
         return c.json({ error: 'Unauthorised' }, 401);
