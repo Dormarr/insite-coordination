@@ -2,107 +2,116 @@ import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import './db/schema.js';
 import deployments from './routes/deployments.js';
-import certificates from './routes/certificates.js';
 import health from './routes/health.js';
 import { requireAdminKey, requireDeploymentKey } from './middleware/auth.js';
 import { CoordinationVariables } from './types/common.js';
+import { cors } from 'hono/cors';
+import { rateLimiter } from 'hono-rate-limiter';
+import { startSweepSchedule } from './jobs/peerSweep.js';
 
 const app = new Hono<{ Variables: CoordinationVariables }>();
 const PORT = 3041;
-
-import { cors } from 'hono/cors';
-import { startSweepSchedule } from './jobs/peerSweep.js';
 
 app.use('*', cors({
     origin: '*',
     allowMethods: ['GET', 'POST', 'PATCH', 'DELETE'],
 }));
 
+// IP allocation helpers for /16 subnet
+const parseIp = (allowedIps: string): number[] | null => {
+    const ip = allowedIps.split('/')[0];
+    const parts = ip.split('.').map(Number);
+    if (parts.length !== 4) return null;
+    return parts;
+}
+
+const ipToNumber = (parts: number[]): number => {
+    return (parts[2] << 8) | parts[3];
+}
+
+const numberToIp = (n: number): string => {
+    const third = (n >> 8) & 0xff;
+    const fourth = n & 0xff;
+    return `10.0.${third}.${fourth}`;
+}
+
+const getNextIp = (livePeers: { pubKey: string, allowedIps: string }[], excludePubKey?: string): string => {
+    const usedNumbers = livePeers
+        .filter(p => p.pubKey !== excludePubKey)
+        .map(p => parseIp(p.allowedIps))
+        .filter((parts): parts is number[] => parts !== null && parts[0] === 10 && parts[1] === 0)
+        .map(parts => ipToNumber(parts));
+
+    let next = 2;
+    while (usedNumbers.includes(next)) next++;
+    return numberToIp(next);
+}
+
+const getWgPeers = async (wgInterface: string) => {
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execAsync = promisify(exec);
+    const { stdout } = await execAsync(`wg show ${wgInterface} dump`);
+    return stdout.trim().split('\n').slice(1).filter(Boolean).map(line => {
+        const [pubKey, , , allowedIps] = line.split('\t');
+        return { pubKey, allowedIps };
+    });
+}
+
 // Public
 app.route('/health', health);
-
-// Deployment heartbeat - deployment key auth
-app.post('/api/v1/deployments/:id/heartbeat', requireDeploymentKey, async (c) => {
-    const { touchHeartbeat } = await import('./services/deploymentService.js');
-    const id = c.req.param('id');
-    if(!id) return new Response(null, { status: 401 });
-    const res = touchHeartbeat(id);
-    if(!res.ok) return c.json({ error: res.error }, 500);
-    return new Response(null, { status: 204 });
-});
-
-// Licence validation - deployment key auth
-app.post('/api/v1/licences/validate', requireDeploymentKey, async (c) => {
-    const { validateLicence } = await import('./services/licenceService.js');
-    const deployment = c.get('deployment');
-    const res = validateLicence(deployment.id);
-    if(!res.ok) return c.json({ error: res.error }, 500);
-    return c.json({ valid: res.data });
-});
 
 // Public deployment lookup - no auth
 app.get('/api/v1/deployments/lookup/:siteCode', async (c) => {
     const siteCode = c.req.param('siteCode');
     const { getDeploymentBySiteCode } = await import('./services/deploymentService.js');
     const res = getDeploymentBySiteCode(siteCode);
-    if(!res.ok) return c.json({ error: 'Deployment not found' }, 404);
+    if (!res.ok) return c.json({ error: 'Deployment not found' }, 404);
     const { id, clientName, siteName, tunnelIp } = res.data;
     return c.json({ id, clientName, siteName, tunnelIp });
 });
 
-// Public deployment registration - no auth
-app.post('/api/v1/deployments/register', async (c) => {
+// Public peer registration for Electron clients - rate limited, no auth
+app.post('/api/v1/deployments/peer', rateLimiter({
+    windowMs: 60 * 1000,
+    limit: 10,
+    keyGenerator: (c: any) => c.req.header('x-forwarded-for') ?? 'unknown',
+}), async (c) => {
     const body = await c.req.json();
     const { siteCode, publicKey } = body;
 
-    if(!siteCode || !publicKey) {
-        return c.json({ error: 'siteCode and publicKey required' }, 400);
+    if (!siteCode || !publicKey) {
+        return c.json({ error: 'siteCode and publicKey are required' }, 400);
     }
 
-    const { getDeploymentBySiteCode, updateDeploymentPeer } = 
+    const { getDeploymentBySiteCode, updateDeploymentPeer } =
         await import('./services/deploymentService.js');
 
     const res = getDeploymentBySiteCode(siteCode);
-    if(!res.ok) return c.json({ error: 'Deployment not found' }, 404);
+    if (!res.ok) return c.json({ error: 'Deployment not found' }, 404);
 
     const deployment = res.data;
+    const wgInterface = process.env.WG_INTERFACE ?? 'wg0';
 
     const { exec } = await import('child_process');
     const { promisify } = await import('util');
     const execAsync = promisify(exec);
-    const wgInterface = process.env.WG_INTERFACE ?? 'wg0';
 
-    // Live wg0 state is the only trustworthy source - the DB can drift from it
-    const { stdout } = await execAsync(`wg show ${wgInterface} dump`);
-    const livePeers = stdout.trim().split('\n').slice(1).filter(Boolean).map(line => {
-        const [pubKey, , , allowedIps] = line.split('\t');
-        return { pubKey, allowedIps };
-    });
+    const livePeers = await getWgPeers(wgInterface);
 
-    // If this site already had a peer (e.g. re-registering after a reset with a
-    // fresh keypair), remove the old one so it doesn't linger as a dead peer
-    // and doesn't keep its old IP marked as "used" once it's gone
-    if(deployment.publicKey && deployment.publicKey !== publicKey) {
+    if (deployment.publicKey && deployment.publicKey !== publicKey) {
         const stillPresent = livePeers.some(p => p.pubKey === deployment.publicKey);
-        if(stillPresent) {
+        if (stillPresent) {
             await execAsync(`wg set ${wgInterface} peer ${deployment.publicKey} remove`);
         }
     }
 
-    const usedIps = livePeers
-        .filter(p => p.pubKey !== deployment.publicKey)
-        .map(p => p.allowedIps)
-        .filter(ip => ip?.startsWith('10.0.0.'))
-        .map(ip => parseInt(ip.split('.')[3].split('/')[0]));
-
-    let nextIp = 2;
-    while(usedIps.includes(nextIp)) nextIp++;
-    const assignedIp = `10.0.0.${nextIp}`;
+    const assignedIp = getNextIp(livePeers, deployment.publicKey ?? undefined);
 
     try {
         await execAsync(`wg set ${wgInterface} peer ${publicKey} allowed-ips ${assignedIp}/32`);
         await execAsync(`wg-quick save ${wgInterface}`);
-    } catch(e) {
+    } catch (e) {
         console.error('[WireGuard] Failed to add peer:', e);
         return c.json({ error: 'Failed to configure tunnel' }, 500);
     }
@@ -116,6 +125,71 @@ app.post('/api/v1/deployments/register', async (c) => {
     });
 });
 
+// Authenticated peer registration for on-site server watchdog - deployment key auth
+app.post('/api/v1/deployments/register', requireDeploymentKey, async (c) => {
+    const body = await c.req.json();
+    const { publicKey } = body;
+
+    if (!publicKey) {
+        return c.json({ error: 'publicKey is required' }, 400);
+    }
+
+    const deployment = c.get('deployment');
+    const { updateDeploymentPeer } = await import('./services/deploymentService.js');
+    const wgInterface = process.env.WG_INTERFACE ?? 'wg0';
+
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execAsync = promisify(exec);
+
+    const livePeers = await getWgPeers(wgInterface);
+
+    if (deployment.publicKey && deployment.publicKey !== publicKey) {
+        const stillPresent = livePeers.some(p => p.pubKey === deployment.publicKey);
+        if (stillPresent) {
+            await execAsync(`wg set ${wgInterface} peer ${deployment.publicKey} remove`);
+        }
+    }
+
+    const assignedIp = getNextIp(livePeers, deployment.publicKey ?? undefined);
+
+    try {
+        await execAsync(`wg set ${wgInterface} peer ${publicKey} allowed-ips ${assignedIp}/32`);
+        await execAsync(`wg-quick save ${wgInterface}`);
+    } catch (e) {
+        console.error('[WireGuard] Failed to add peer:', e);
+        return c.json({ error: 'Failed to configure tunnel' }, 500);
+    }
+
+    updateDeploymentPeer(deployment.id, publicKey, assignedIp);
+
+    return c.json({
+        assignedIp,
+        serverPublicKey: process.env.WG_SERVER_PUBLIC_KEY,
+        serverEndpoint: process.env.WG_SERVER_ENDPOINT,
+    });
+});
+
+// Deployment heartbeat - deployment key auth
+app.post('/api/v1/deployments/:id/heartbeat', requireDeploymentKey, async (c) => {
+    const { touchHeartbeat } = await import('./services/deploymentService.js');
+    const id = c.req.param('id');
+    if (!id) return new Response(null, { status: 401 });
+    const res = touchHeartbeat(id);
+    if (!res.ok) return c.json({ error: res.error }, 500);
+    return new Response(null, { status: 204 });
+});
+
+// Licence validation - deployment key auth
+app.post('/api/v1/licences/validate', requireDeploymentKey, async (c) => {
+    const { validateLicence } = await import('./services/licenceService.js');
+    const deployment = c.get('deployment');
+    const res = validateLicence(deployment.id);
+    if (!res.ok) return c.json({ error: res.error }, 500);
+    return c.json({ valid: res.data });
+});
+
+// Certificate issuance - deployment key auth
 app.post('/api/v1/certificates/issue', requireDeploymentKey, async (c) => {
     console.log('[Certificates] Request received for issuance');
     const { issueCertificate } = await import('./services/certificateService.js');
@@ -124,7 +198,6 @@ app.post('/api/v1/certificates/issue', requireDeploymentKey, async (c) => {
     const { csr } = body;
 
     if (!csr) return c.json({ error: 'csr is required' }, 400);
-    if(!deployment) console.log('[Certificates] Deployment key is missing');
 
     const hostname = `${deployment.siteCode}.insite-platform.co.uk`;
 
