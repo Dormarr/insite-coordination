@@ -7,8 +7,8 @@ export type Deployment = {
     siteName: string,
     siteCode: string,
     deploymentKey: string,
-    tunnelIp: string,
-    publicKey: string,
+    tunnelIp?: string,
+    publicKey?: string,
     lastHeartbeat: string | null,
     status: string,
     licenceId: string | null,
@@ -18,8 +18,8 @@ export type Deployment = {
 export type CreateDeploymentParams = {
     clientName: string,
     siteName: string,
-    tunnelIp: string,
-    publicKey: string,
+    tunnelIp?: string,
+    publicKey?: string,
     siteCode: string,
 }
 
@@ -63,8 +63,8 @@ export const createDeployment = (params: CreateDeploymentParams): ServiceResult<
             siteName: params.siteName,
             siteCode: params.siteCode,
             deploymentKey,
-            tunnelIp: params.tunnelIp,
-            publicKey: params.publicKey,
+            tunnelIp: params.tunnelIp ?? null,
+            publicKey: params.publicKey ?? null,
             createdAt,
         });
 

@@ -3,7 +3,6 @@ import { serve } from '@hono/node-server';
 import './db/schema.js';
 import deployments from './routes/deployments.js';
 import certificates from './routes/certificates.js';
-import licences from './routes/licences.js';
 import health from './routes/health.js';
 import { requireAdminKey, requireDeploymentKey } from './middleware/auth.js';
 import { CoordinationVariables } from './types/common.js';
@@ -142,7 +141,6 @@ app.post('/api/v1/certificates/issue', requireDeploymentKey, async (c) => {
 // Admin routes - admin key auth
 app.use('/api/v1/*', requireAdminKey);
 app.route('/api/v1/deployments', deployments);
-app.route('/api/v1/licences', licences);
 
 serve({ fetch: app.fetch, port: PORT }, () => {
     console.log(`InSite Coordination running on http://localhost:${PORT}`);

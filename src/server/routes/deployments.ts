@@ -22,15 +22,20 @@ deployments.get('/:id', (c) => {
 deployments.post('/', async (c) => {
     const body = await c.req.json();
 
-    if(!body.clientName || !body.siteName || !body.tunnelIp || !body.publicKey || !body.siteCode){
-        return c.json({ error: 'clientName, siteName, tunnelIp, publicKey and siteCode are required' }, 400);
+    const _res = getDeploymentBySiteCode(body.siteCode);
+    if(_res.ok){
+        return c.json({ error: `Site with site code ${body.siteCode} is already registered`}, 409);
+    }
+
+    if(!body.clientName || !body.siteName || !body.siteCode){
+        return c.json({ error: 'clientName, siteName, and siteCode are required' }, 400);
     }
 
     const res = createDeployment({
         clientName: body.clientName,
         siteName: body.siteName,
-        tunnelIp: body.tunnelIp,
-        publicKey: body.publicKey,
+        ...(body.tunnelIp ? { tunnelIp: body.tunnelIp } : {}),
+        ...(body.publicKey ? { publicKey: body.publicKey } : {}),
         siteCode: body.siteCode,
     });
 
